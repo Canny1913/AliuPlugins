@@ -8,7 +8,10 @@ import androidx.core.content.ContextCompat
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.*
+import com.aliucord.patcher.before
+import com.aliucord.patcher.component1
+import com.aliucord.patcher.component2
+import com.aliucord.patcher.instead
 import com.aliucord.utils.RxUtils
 import com.aliucord.utils.RxUtils.subscribe
 import com.discord.databinding.WidgetChatListBinding
@@ -51,7 +54,11 @@ class JumpToMessageFix : Plugin() {
             adapter.onResume()
 
             val channelObservable =
-                ObservableExtensionsKt.ui(ObservableExtensionsKt.computationLatest(WidgetChatListModel.Companion!!.get()), this, adapter)
+                ObservableExtensionsKt.ui(
+                    ObservableExtensionsKt.computationLatest(WidgetChatListModel.Companion!!.get()),
+                    this,
+                    adapter
+                )
             val channelSubscriber = RxUtils.createActionSubscriber<WidgetChatListModel>(
                 onNext = { widgetModel ->
                     // Prevent auto scroller from getting executed *after* jumping action
@@ -66,9 +73,12 @@ class JumpToMessageFix : Plugin() {
             )
             channelObservable.subscribe(channelSubscriber)
 
-            val scrollObservable = ObservableExtensionsKt.ui(StoreStream.Companion!!.messagesLoader.scrollTo, this, null)
+            val scrollObservable =
+                ObservableExtensionsKt.ui(StoreStream.Companion!!.messagesLoader.scrollTo, this, null)
             val scrollSubscriber = RxUtils.createActionSubscriber<Long>(
-                onNext = { messageId -> WidgetChatList.`access$scrollTo`(this, messageId) },
+                onNext = { messageId ->
+                    WidgetChatList.`access$scrollTo`(this, messageId)
+                },
                 onError = logger::error
             )
             scrollObservable.subscribe(scrollSubscriber)
@@ -91,20 +101,29 @@ class JumpToMessageFix : Plugin() {
             }
         }
         // Custom message highlighting implementation. Message won't de-highlight until user taps on chat.
-        patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>("animateHighlight", View::class.java) { param ->
-            val view = param.args[0] as View
-            val highlightDrawableId = Utils.getResId("drawable_bg_highlight", "drawable")
-            val highlightDrawable = ContextCompat.getDrawable(Utils.appActivity, highlightDrawableId) as TransitionDrawable
-            view.background = highlightDrawable
-            highlightDrawable.startTransition(500)
-            highlightedMessageView.set(view)
+        patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>(
+            "animateHighlight",
+            View::class.java
+        ) { param ->
+            customAnimateHighlight(param.args[0] as View)
         }
         patcher.before<WidgetChatListAdapter.HandlerOfTouches>("onTouch", View::class.java, MotionEvent::class.java) {
             val messageView = highlightedMessageView.getAndSet(null) ?: return@before
-            val transitionDrawable = messageView.background as? TransitionDrawable ?: return@before
+            val transitionDrawable = messageView.background as TransitionDrawable
             transitionDrawable.reverseTransition(500)
+        }
+        patcher.instead<WidgetChatListAdapter>("findBestNewMessagesPosition", Int::class.javaPrimitiveType!!) { param ->
+            param.result = param.args[0]
         }
     }
 
     override fun stop(context: Context) = patcher.unpatchAll()
+
+    fun customAnimateHighlight(view: View) {
+        val highlightDrawableId = Utils.getResId("drawable_bg_highlight", "drawable")
+        val highlightDrawable = ContextCompat.getDrawable(Utils.appActivity, highlightDrawableId) as TransitionDrawable
+        view.background = highlightDrawable
+        highlightDrawable.startTransition(500)
+        highlightedMessageView.set(view)
+    }
 }
