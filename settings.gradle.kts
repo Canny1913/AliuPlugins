@@ -26,7 +26,6 @@ dependencyResolutionManagement {
 rootProject.name = "aliucord-plugins"
 include(":plugins")
 
-// Add each directory under ./plugins as a separate project
-rootDir.resolve("plugins")
-    .listFiles { file -> file.isDirectory && file.resolve("build.gradle.kts").exists() }!!
-    .forEach { include(":plugins:${it.name}") }
+// Stupid to automatically include projects, nothing wrong with manually adding
+include(":plugins:JumpToMessagesFix")
+include(":plugins:RequestInterceptor")

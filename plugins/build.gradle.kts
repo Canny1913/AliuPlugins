@@ -18,7 +18,7 @@ subprojects {
 
     configure<LibraryExtension> {
         // TODO: Change to your package name
-        namespace = "com.github.yournamehere"
+        namespace = "com.github.canny1913"
         compileSdk = 36
 
         defaultConfig {
@@ -39,11 +39,8 @@ subprojects {
     }
 
     configure<AliucordExtension> {
-        // TODO: Change to your name and user ID
-        author("yournamehere", 0L, hyperlink = true)
-
-        // TODO: Change to your repository
-        github("https://github.com/Aliucord/plugins-template")
+        author("canny1913", 1264872702821273633L, hyperlink = true)
+        github("https://github.com/canny1913/AliuPlugins")
     }
 
     configure<KtlintExtension> {
@@ -67,6 +64,7 @@ subprojects {
         val implementation by configurations
 
         compileOnly(libs.discord)
+        compileOnly(libs.aliuhook)
         compileOnly(libs.aliucord)
         compileOnly(libs.kotlin.stdlib)
     }
