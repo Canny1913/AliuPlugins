@@ -112,8 +112,8 @@ class JumpToMessageFix : Plugin() {
             val transitionDrawable = messageView.background as TransitionDrawable
             transitionDrawable.reverseTransition(500)
         }
-        patcher.instead<WidgetChatListAdapter>("findBestNewMessagesPosition", Int::class.javaPrimitiveType!!) { param ->
-            param.result = param.args[0]
+        patcher.instead<WidgetChatListAdapter.Companion>("findBestNewMessagesPosition", Int::class.javaPrimitiveType!!) { param ->
+            return@instead param.args[0]
         }
     }
 
