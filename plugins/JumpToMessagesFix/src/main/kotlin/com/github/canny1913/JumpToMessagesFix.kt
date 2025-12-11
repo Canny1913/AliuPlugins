@@ -8,10 +8,7 @@ import androidx.core.content.ContextCompat
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.before
-import com.aliucord.patcher.component1
-import com.aliucord.patcher.component2
-import com.aliucord.patcher.instead
+import com.aliucord.patcher.*
 import com.aliucord.utils.RxUtils
 import com.aliucord.utils.RxUtils.subscribe
 import com.discord.databinding.WidgetChatListBinding
@@ -109,7 +106,7 @@ class JumpToMessageFix : Plugin() {
         }
         patcher.before<WidgetChatListAdapter.HandlerOfTouches>("onTouch", View::class.java, MotionEvent::class.java) {
             val messageView = highlightedMessageView.getAndSet(null) ?: return@before
-            val transitionDrawable = messageView.background as TransitionDrawable
+            val transitionDrawable = messageView.background as? TransitionDrawable ?: return@before
             transitionDrawable.reverseTransition(500)
         }
         patcher.instead<WidgetChatListAdapter.Companion>("findBestNewMessagesPosition", Int::class.javaPrimitiveType!!) { param ->
