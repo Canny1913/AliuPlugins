@@ -28,3 +28,4 @@ include(":plugins")
 
 // Stupid to automatically include projects, nothing wrong with manually adding
 include(":plugins:JumpToMessagesFix")
+include(":plugins:BetterEmojis")
