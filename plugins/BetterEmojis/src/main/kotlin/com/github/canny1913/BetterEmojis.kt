@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.api.SettingsAPI
 import com.aliucord.entities.Plugin
@@ -70,8 +71,11 @@ class BetterEmojis : Plugin() {
                     val items = adapter.items.toMutableList()
                     val item = items.removeAt(viewHolder.bindingAdapterPosition)
                     items.add(target.bindingAdapterPosition, item)
-                    // no need for async updater here
-                    EmojiCategoryAdapter.`access$setItems$p`(adapter, items)
+                    adapter.setItems(items)
+                    Utils.threadPool.execute {
+                        if (items.isEmpty()) return@execute
+                        settings.savedPositions = items.map(EmojiCategoryItem::getKey).toMutableList()
+                    }
                     return true
                 }
 
@@ -89,18 +93,6 @@ class BetterEmojis : Plugin() {
             val items = param.args[2] as ArrayList<EmojiCategoryItem>
             val newList = buildNewItemList(items)
             param.args[2] = newList
-        }
-
-        patcher.after<WidgetExpressionTray>("isShown", Boolean::class.javaPrimitiveType!!) { param ->
-            val isShown = param.args[0] as Boolean
-            val fragment = emojiFragmentField[this] as WidgetEmojiPicker
-            val adapter = categoryAdapterField[fragment] as EmojiCategoryAdapter
-            if (!isShown) {
-                val items = adapter.items
-                // so we don't accidentally overwrite settings with empty list
-                if (items.isEmpty()) return@after
-                settings.savedPositions = items.map(EmojiCategoryItem::getKey).toMutableList()
-            }
         }
 
         /// prevent automatic selection of FAVOURITES emoji category

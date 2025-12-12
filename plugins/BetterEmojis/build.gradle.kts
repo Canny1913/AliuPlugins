@@ -1,9 +1,12 @@
-version = "1.0.0"
+version = "1.0.1"
 description = "A plugin that improves chat emoji picker."
 
 aliucord {
     changelog.set(
         """
+        # 1.0.1
+        * Fixed category list not saving correctly.
+        
         # 1.0.0
         * Initial plugin release.
         * Added emoji reordering. (BETA)
