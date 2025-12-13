@@ -8,22 +8,33 @@ import androidx.core.content.ContextCompat
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.*
+import com.aliucord.patcher.before
+import com.aliucord.patcher.instead
 import com.aliucord.utils.RxUtils
 import com.aliucord.utils.RxUtils.subscribe
+import com.discord.api.channel.Channel
 import com.discord.databinding.WidgetChatListBinding
+import com.discord.models.message.Message
 import com.discord.stores.StoreChat
+import com.discord.stores.StoreMessagesLoader
 import com.discord.stores.StoreStream
+import com.discord.utilities.channel.ChannelSelector
 import com.discord.utilities.rx.ObservableExtensionsKt
 import com.discord.widgets.chat.list.WidgetChatList
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapter
+import com.discord.widgets.chat.list.entries.MessageEntry
+import com.discord.widgets.chat.list.entries.NewMessagesEntry
 import com.discord.widgets.chat.list.model.WidgetChatListModel
 import com.github.canny1913.jumptomessages.JumpToMessageSettings
 import rx.Observable
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import com.discord.stores.`StoreMessagesLoader$jumpToMessage$1$1` as SelectedChannelStateUpdater
+import com.discord.stores.`StoreMessagesLoader$jumpToMessage$2$1` as ConnectionChannelUpdater
 
+@Suppress("unused")
 @AliucordPlugin(
     requiresRestart = false
 )
@@ -58,6 +69,7 @@ class JumpToMessageFix : Plugin() {
                 )
             val channelSubscriber = RxUtils.createActionSubscriber<WidgetChatListModel>(
                 onNext = { widgetModel ->
+                    widgetModel.isLoadingMessages
                     // Prevent auto scroller from getting executed *after* jumping action
                     // else it would instantly scroll back to bottom
                     val handler = WidgetChatListAdapter.`access$getHandlerOfUpdates$p`(adapter)
@@ -66,7 +78,7 @@ class JumpToMessageFix : Plugin() {
                     WidgetChatListAdapter.`access$setTouchedSinceLastJump$p`(adapter, true)
                     WidgetChatList.`access$configureUI`(this, widgetModel)
                 },
-                onError = logger::error
+                onError = ::observableError
             )
             channelObservable.subscribe(channelSubscriber)
 
@@ -76,7 +88,7 @@ class JumpToMessageFix : Plugin() {
                 onNext = { messageId ->
                     WidgetChatList.`access$scrollTo`(this, messageId)
                 },
-                onError = logger::error
+                onError = ::observableError
             )
             scrollObservable.subscribe(scrollSubscriber)
 
@@ -102,25 +114,116 @@ class JumpToMessageFix : Plugin() {
             "animateHighlight",
             View::class.java
         ) { param ->
-            customAnimateHighlight(param.args[0] as View)
+            Utils.threadPool.execute { customAnimateHighlight(param.args[0] as View) }
         }
+        // De-highlight
         patcher.before<WidgetChatListAdapter.HandlerOfTouches>("onTouch", View::class.java, MotionEvent::class.java) {
             val messageView = highlightedMessageView.getAndSet(null) ?: return@before
             val transitionDrawable = messageView.background as? TransitionDrawable ?: return@before
             transitionDrawable.reverseTransition(500)
         }
-        patcher.instead<WidgetChatListAdapter.Companion>("findBestNewMessagesPosition", Int::class.javaPrimitiveType!!) { param ->
-            return@instead param.args[0]
+        patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>("getNewMessageEntryIndex", List::class.java) { param ->
+            val list = param.args[0] as List<*>
+            var messageId = this.messageId
+
+            if (messageId == StoreMessagesLoader.SCROLL_TO_LATEST) {
+                return@instead 0
+            }
+            if (messageId == StoreMessagesLoader.SCROLL_TO_LAST_UNREAD) {
+                messageId = this.adapter.data.newMessagesMarkerMessageId
+                if (messageId <= 0L) {
+                    return@instead 0
+                }
+            }
+            // invalid id
+            if (messageId <= 0L) {
+                return@instead -1
+            }
+
+            val messageIndex = list.indexOfFirst { item -> (item is MessageEntry) && item.message.id == messageId }
+
+            if (messageIndex == -1) {
+                return@instead -1
+            }
+            val newMessageIndex = list.subList(0, messageIndex).indexOfLast { (it is NewMessagesEntry) && it.messageId == messageId }.takeIf { it != -1 }
+
+            return@instead newMessageIndex ?: messageIndex
+        }
+        patcher.instead<StoreMessagesLoader>("jumpToMessage", Long::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!) { param ->
+            val channelId = param.args[0] as Long
+            val messageId = param.args[1] as Long
+            this.customJumpToMessage(channelId, messageId)
         }
     }
 
     override fun stop(context: Context) = patcher.unpatchAll()
 
+    fun StoreMessagesLoader.customJumpToMessage(channelId: Long, messageId: Long) {
+        if (messageId <= 0) {
+            return
+        }
+
+        val connectionSubscriber = RxUtils.createActionSubscriber<Channel>(
+            onNext = { channel ->
+                if (channel.k() == StoreMessagesLoader.`access$getSelectedChannelId$p`(this)) return@createActionSubscriber
+
+                StoreMessagesLoader.`access$channelLoadedStateUpdate`(
+                    this,
+                    channelId,
+                    ConnectionChannelUpdater.INSTANCE
+                )
+                val selector = ChannelSelector.Companion!!.instance
+                selector.selectChannel(channel, null, null)
+            },
+            onError = ::observableError
+        )
+
+        val connectionObservable = StoreStream.Companion!!.connectionOpen.observeConnectionOpen(true).Z(1) // Observable.buffer
+            .A { bool -> // Observable.flatMap
+                val channelObserver = StoreStream.Companion!!.channels.observeChannel(channelId)
+                ObservableExtensionsKt.takeSingleUntilTimeout(channelObserver, 5000L, true)
+            }
+
+        val latestConnectionObservable = ObservableExtensionsKt.computationLatest(connectionObservable)
+            .apply { subscribe(connectionSubscriber) }
+
+        val selectedSubscriber = RxUtils.createActionSubscriber<Message>(
+            onNext = { message ->
+                StoreMessagesLoader.`access$getDispatcher$p`(this@customJumpToMessage)
+                    .schedule {
+                        if (message != null) {
+                            StoreMessagesLoader.`access$getScrollToSubject$p`(this).k.onNext(message.id)
+                        } else {
+                            StoreMessagesLoader.`access$channelLoadedStateUpdate`(this, channelId, SelectedChannelStateUpdater.INSTANCE)
+                            StoreMessagesLoader.`tryLoadMessages$default`(this, 0L, true, false, false, channelId, messageId, 13, null)
+                        }
+                    }
+            },
+            // FIXME: This can potentially spam logs
+            onError = ::observableError
+        )
+
+        // not sure what this is but oh well
+        val transformer = b.a.d.o.c({ newId -> channelId == newId }, -1L, 5000L, TimeUnit.MILLISECONDS)
+        val selectedChannelObserver = StoreStream.Companion!!.channelsSelected.observeId()
+            .k(transformer) // Observable.compose
+            .Y {
+                StoreStream.Companion!!.messages.observeMessagesForChannel(channelId, messageId)
+            } // Observable.flatMap?
+        val latestSelectedObserver = ObservableExtensionsKt.takeSingleUntilTimeout(selectedChannelObserver, 5000L, true)
+            .apply { subscribe(selectedSubscriber) }
+
+        Observable.m(latestConnectionObservable, latestSelectedObserver) // Observable.concat
+    }
     fun customAnimateHighlight(view: View) {
+
         val highlightDrawableId = Utils.getResId("drawable_bg_highlight", "drawable")
         val highlightDrawable = ContextCompat.getDrawable(Utils.appActivity, highlightDrawableId) as TransitionDrawable
         view.background = highlightDrawable
-        highlightDrawable.startTransition(500)
+        Utils.mainThread.post { highlightDrawable.startTransition(500) }
+        Thread.sleep(100)
         highlightedMessageView.set(view)
     }
+
+    fun observableError(e: Throwable) = logger.error("Observable error:", e)
 }
