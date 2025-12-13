@@ -1,9 +1,12 @@
-version = "0.0.2"
+version = "0.0.3"
 description = "Fixes message links not jumping to correct message."
 
 aliucord {
     changelog.set(
         """
+        # 0.0.3
+        * Attempts to fix inconsistencies yet again.
+
         # 0.0.2
         * Fixed exception caused by unnecessary onTouch hook trigger
         
