@@ -69,7 +69,6 @@ class JumpToMessageFix : Plugin() {
                 )
             val channelSubscriber = RxUtils.createActionSubscriber<WidgetChatListModel>(
                 onNext = { widgetModel ->
-                    widgetModel.isLoadingMessages
                     // Prevent auto scroller from getting executed *after* jumping action
                     // else it would instantly scroll back to bottom
                     val handler = WidgetChatListAdapter.`access$getHandlerOfUpdates$p`(adapter)

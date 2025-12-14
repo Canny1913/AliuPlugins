@@ -14,5 +14,6 @@ aliucord {
         * Initial plugin release.
         """.trimIndent()
     )
-    deploy.set(false)
+    deploy.set(true)
+    deployHidden.set(true)
 }
