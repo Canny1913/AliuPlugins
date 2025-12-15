@@ -69,12 +69,6 @@ class JumpToMessageFix : Plugin() {
                 )
             val channelSubscriber = RxUtils.createActionSubscriber<WidgetChatListModel>(
                 onNext = { widgetModel ->
-                    // Prevent auto scroller from getting executed *after* jumping action
-                    // else it would instantly scroll back to bottom
-                    val handler = WidgetChatListAdapter.`access$getHandlerOfUpdates$p`(adapter)
-                    // id from chat list model doesn't seem reliable
-                    channelIdField[handler] = StoreStream.Companion!!.channelsSelected.id
-                    WidgetChatListAdapter.`access$setTouchedSinceLastJump$p`(adapter, true)
                     WidgetChatList.`access$configureUI`(this, widgetModel)
                 },
                 onError = ::observableError
@@ -85,6 +79,12 @@ class JumpToMessageFix : Plugin() {
                 ObservableExtensionsKt.ui(StoreStream.Companion!!.messagesLoader.scrollTo, this, null)
             val scrollSubscriber = RxUtils.createActionSubscriber<Long>(
                 onNext = { messageId ->
+                    // Prevent auto scroller from getting executed *after* jumping action
+                    // else it would instantly scroll back to bottom
+                    val handler = WidgetChatListAdapter.`access$getHandlerOfUpdates$p`(adapter)
+                    // id from chat list model doesn't seem reliable
+                    channelIdField[handler] = StoreStream.Companion!!.channelsSelected.id
+                    WidgetChatListAdapter.`access$setTouchedSinceLastJump$p`(adapter, true)
                     WidgetChatList.`access$scrollTo`(this, messageId)
                 },
                 onError = ::observableError
@@ -113,7 +113,7 @@ class JumpToMessageFix : Plugin() {
             "animateHighlight",
             View::class.java
         ) { param ->
-            Utils.threadPool.execute { customAnimateHighlight(param.args[0] as View) }
+            customAnimateHighlight(param.args[0] as View)
         }
         // De-highlight
         patcher.before<WidgetChatListAdapter.HandlerOfTouches>("onTouch", View::class.java, MotionEvent::class.java) {
@@ -218,9 +218,11 @@ class JumpToMessageFix : Plugin() {
 
         val highlightDrawableId = Utils.getResId("drawable_bg_highlight", "drawable")
         val highlightDrawable = ContextCompat.getDrawable(Utils.appActivity, highlightDrawableId) as TransitionDrawable
-        view.background = highlightDrawable
-        Utils.mainThread.post { highlightDrawable.startTransition(500) }
-        Thread.sleep(100)
+        Thread.sleep(100) // bad workaround
+        Utils.mainThread.post {
+            view.background = highlightDrawable
+            highlightDrawable.startTransition(500)
+        }
         highlightedMessageView.set(view)
     }
 
