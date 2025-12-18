@@ -1,9 +1,12 @@
-version = "0.0.5"
+version = "0.0.6"
 description = "Fixes message links not jumping to correct message."
 
 aliucord {
     changelog.set(
         """
+        # 0.0.6
+        * Custom highlighting is now optional in settings
+        
         # 0.0.5
         * Fixed observable crashes caused by bad asynchronous execution
             
