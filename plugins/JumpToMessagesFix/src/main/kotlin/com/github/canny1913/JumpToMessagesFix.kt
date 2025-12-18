@@ -1,5 +1,6 @@
 package com.github.canny1913
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.drawable.TransitionDrawable
 import android.view.MotionEvent
@@ -7,9 +8,11 @@ import android.view.View
 import androidx.core.content.ContextCompat
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
+import com.aliucord.api.PatcherAPI
+import com.aliucord.api.Unpatch
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.before
-import com.aliucord.patcher.instead
+import com.aliucord.patcher.*
+import com.aliucord.utils.ReflectUtils
 import com.aliucord.utils.RxUtils
 import com.aliucord.utils.RxUtils.subscribe
 import com.discord.api.channel.Channel
@@ -22,11 +25,17 @@ import com.discord.utilities.channel.ChannelSelector
 import com.discord.utilities.rx.ObservableExtensionsKt
 import com.discord.widgets.chat.list.WidgetChatList
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapter
+import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
+import com.discord.widgets.chat.list.adapter.WidgetChatListItem
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.chat.list.entries.NewMessagesEntry
 import com.discord.widgets.chat.list.model.WidgetChatListModel
 import com.github.canny1913.jumptomessages.JumpToMessageSettings
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook.MethodHookParam
+import de.robv.android.xposed.callbacks.XCallback
 import rx.Observable
+import rx.subjects.PublishSubject
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.TimeUnit
@@ -45,14 +54,18 @@ class JumpToMessageFix : Plugin() {
     }
 
     val bindingGetter: Method = WidgetChatList::class.java.getDeclaredMethod("getBinding").apply { isAccessible = true }
-    val channelIdField: Field = WidgetChatListAdapter.HandlerOfUpdates::class.java.getDeclaredField("channelId").apply { isAccessible = true }
-    val itemAnimatorField: Field = WidgetChatList::class.java.getDeclaredField("defaultItemAnimator").apply { isAccessible = true }
+    val channelIdField: Field =
+        WidgetChatListAdapter.HandlerOfUpdates::class.java.getDeclaredField("channelId").apply { isAccessible = true }
+    val itemAnimatorField: Field =
+        WidgetChatList::class.java.getDeclaredField("defaultItemAnimator").apply { isAccessible = true }
+
     val highlightedMessageView: AtomicReference<View?> = AtomicReference()
+
 
     override fun start(context: Context) {
         // Modified reimplementation of original function that concatenates
         // channel loading and message jumping Observables to avoid synchronization issues
-        patcher.instead<WidgetChatList>("onViewBoundOrOnResume") {
+        patcher.instead<WidgetChatList>("onViewBoundOrOnResume", XCallback.PRIORITY_LOWEST) {
 
             val adapter = WidgetChatList.`access$getAdapter$p`(this)
             val binding = bindingGetter(this) as WidgetChatListBinding
@@ -111,9 +124,10 @@ class JumpToMessageFix : Plugin() {
         // Custom message highlighting implementation. Message won't de-highlight until user taps on chat.
         patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>(
             "animateHighlight",
+            XCallback.PRIORITY_LOWEST,
             View::class.java
-        ) { param ->
-            customAnimateHighlight(param.args[0] as View)
+        ) { (_, view: View) ->
+            customAnimateHighlight(view)
         }
         // De-highlight
         patcher.before<WidgetChatListAdapter.HandlerOfTouches>("onTouch", View::class.java, MotionEvent::class.java) {
@@ -121,13 +135,18 @@ class JumpToMessageFix : Plugin() {
             val transitionDrawable = messageView.background as? TransitionDrawable ?: return@before
             transitionDrawable.reverseTransition(500)
         }
-        patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>("getNewMessageEntryIndex", List::class.java) { param ->
+        patcher.instead<WidgetChatListAdapter.ScrollToWithHighlight>(
+            "getNewMessageEntryIndex",
+            XCallback.PRIORITY_LOWEST,
+            List::class.java
+        ) { param ->
             val list = param.args[0] as List<*>
             var messageId = this.messageId
 
             if (messageId == StoreMessagesLoader.SCROLL_TO_LATEST) {
                 return@instead 0
             }
+
             if (messageId == StoreMessagesLoader.SCROLL_TO_LAST_UNREAD) {
                 messageId = this.adapter.data.newMessagesMarkerMessageId
                 if (messageId <= 0L) {
@@ -148,7 +167,11 @@ class JumpToMessageFix : Plugin() {
 
             return@instead newMessageIndex ?: messageIndex
         }
-        patcher.instead<StoreMessagesLoader>("jumpToMessage", Long::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!) { param ->
+        patcher.instead<StoreMessagesLoader>(
+            "jumpToMessage",
+            Long::class.javaPrimitiveType!!,
+            Long::class.javaPrimitiveType!!
+        ) { param ->
             val channelId = param.args[0] as Long
             val messageId = param.args[1] as Long
             this.customJumpToMessage(channelId, messageId)
@@ -177,11 +200,12 @@ class JumpToMessageFix : Plugin() {
             onError = ::observableError
         )
 
-        val connectionObservable = StoreStream.Companion!!.connectionOpen.observeConnectionOpen(true).Z(1) // Observable.buffer
-            .A { bool -> // Observable.flatMap
-                val channelObserver = StoreStream.Companion!!.channels.observeChannel(channelId)
-                ObservableExtensionsKt.takeSingleUntilTimeout(channelObserver, 5000L, true)
-            }
+        val connectionObservable =
+            StoreStream.Companion!!.connectionOpen.observeConnectionOpen(true).Z(1) // Observable.buffer
+                .A { bool -> // Observable.flatMap
+                    val channelObserver = StoreStream.Companion!!.channels.observeChannel(channelId)
+                    ObservableExtensionsKt.takeSingleUntilTimeout(channelObserver, 5000L, true)
+                }
 
         val latestConnectionObservable = ObservableExtensionsKt.computationLatest(connectionObservable)
             .apply { subscribe(connectionSubscriber) }
@@ -193,8 +217,22 @@ class JumpToMessageFix : Plugin() {
                         if (message != null) {
                             StoreMessagesLoader.`access$getScrollToSubject$p`(this).k.onNext(message.id)
                         } else {
-                            StoreMessagesLoader.`access$channelLoadedStateUpdate`(this, channelId, SelectedChannelStateUpdater.INSTANCE)
-                            StoreMessagesLoader.`tryLoadMessages$default`(this, 0L, true, false, false, channelId, messageId, 13, null)
+                            StoreMessagesLoader.`access$channelLoadedStateUpdate`(
+                                this,
+                                channelId,
+                                SelectedChannelStateUpdater.INSTANCE
+                            )
+                            StoreMessagesLoader.`tryLoadMessages$default`(
+                                this,
+                                0L,
+                                true,
+                                false,
+                                false,
+                                channelId,
+                                messageId,
+                                13,
+                                null
+                            )
                         }
                     }
             },
@@ -214,17 +252,51 @@ class JumpToMessageFix : Plugin() {
 
         Observable.m(latestConnectionObservable, latestSelectedObserver) // Observable.concat
     }
-    fun customAnimateHighlight(view: View) {
 
+    fun customAnimateHighlight(view: View) {
         val highlightDrawableId = Utils.getResId("drawable_bg_highlight", "drawable")
         val highlightDrawable = ContextCompat.getDrawable(Utils.appActivity, highlightDrawableId) as TransitionDrawable
-        Thread.sleep(100) // bad workaround
-        Utils.mainThread.post {
-            view.background = highlightDrawable
-            highlightDrawable.startTransition(500)
+        view.background = highlightDrawable
+        highlightDrawable.startTransition(500)
+        if (JumpToMessageSettings.customHighlight) {
+            highlightedMessageView.set(view)
+        } else {
+            deHighlight(highlightDrawable)
         }
-        highlightedMessageView.set(view)
     }
 
+    fun deHighlight(drawable: TransitionDrawable) {
+        Utils.threadPool.execute {
+            Thread.sleep(1000)
+            Utils.mainThread.post {
+                drawable.reverseTransition(500)
+            }
+        }
+    }
+
+
     fun observableError(e: Throwable) = logger.error("Observable error:", e)
+}
+
+typealias InsteadHookCallback<T> = T.(MethodHookParam) -> Any?
+
+/**
+ * Modified version of Patcher.API.instead that supports priorities
+ */
+context(plugin: Plugin)
+inline fun <reified T> PatcherAPI.instead(
+    methodName: String,
+    priority: Int,
+    vararg paramTypes: Class<*>,
+    crossinline callback: InsteadHookCallback<T>
+): Unpatch {
+    return patch(T::class.java.getDeclaredMethod(methodName, *paramTypes), object : XC_MethodHook(priority) {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            try {
+                param.result = callback(param.thisObject as T, param)
+            } catch (th: Throwable) {
+                plugin.logger.error("Exception while replacing ${param.method.declaringClass.name}.${param.method.name}", th)
+            }
+        }
+    })
 }

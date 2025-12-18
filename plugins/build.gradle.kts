@@ -53,6 +53,7 @@ subprojects {
 
     configure<KotlinAndroidExtension> {
         compilerOptions {
+            freeCompilerArgs.add("-XXLanguage:+ContextParameters")
             jvmTarget = JvmTarget.JVM_21
             optIn.add("kotlin.RequiresOptIn")
         }

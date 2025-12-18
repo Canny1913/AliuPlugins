@@ -16,11 +16,16 @@ internal object JumpToMessageSettings {
     private val autoExpandBlockedMessagesDelegate = settings.delegate("autoExpandBlockedMessages", true)
     val autoExpandBlockedMessages by autoExpandBlockedMessagesDelegate
 
+    private val customHighlightDelegate = settings.delegate("customHighlight", true)
+
+    val customHighlight by customHighlightDelegate
+
     class Sheet : BottomSheet() {
         override fun onViewCreated(view: View, bundle: Bundle?) {
             super.onViewCreated(view, bundle)
 
             createSetting("Expand blocked messages on jump", autoExpandBlockedMessagesDelegate).addTo(linearLayout)
+            createSetting("Enable custom highlighting", customHighlightDelegate).addTo(linearLayout)
         }
 
         @Suppress("AssignedValueIsNeverRead")
