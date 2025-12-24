@@ -9,5 +9,4 @@ aliucord {
         """.trimIndent()
     )
     deploy.set(true)
-    deployHidden.set(true)
 }
