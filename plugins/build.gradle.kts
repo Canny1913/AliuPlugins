@@ -17,7 +17,6 @@ subprojects {
     }
 
     configure<LibraryExtension> {
-        // TODO: Change to your package name
         namespace = "com.github.canny1913"
         compileSdk = 36
 
