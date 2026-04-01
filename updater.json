@@ -1,0 +1,1 @@
+{"ExamplePlugin":{"version":"1.0.0","build":"https://cdn.jsdelivr.net/gh/Owner/Name@refs/heads/builds/ExamplePlugin.zip","buildCrc32":"24EFEAA7","changelog":"# 1.0.0\n* Initial version","minimumDiscordVersion":126021,"minimumAliucordVersion":"2.7.1","minimumKotlinVersion":"2.3.20","minimumApiLevel":21}}
