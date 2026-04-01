@@ -23,11 +23,11 @@ subprojects {
     pluginManager.apply(libs.plugins.kotlin.android.get().pluginId)
 
     configure<AliucordExtension> {
-        github("https://github.com/Owner/Name")
+        github("https://github.com/canny1913/AliucordPlugins")
     }
 
     configure<LibraryExtension> {
-        namespace = "com.github.yourname"
+        namespace = "com.github.canny1913"
         compileSdk = 36
 
         defaultConfig {
