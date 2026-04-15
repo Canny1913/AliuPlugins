@@ -23,6 +23,7 @@ subprojects {
     pluginManager.apply(libs.plugins.kotlin.android.get().pluginId)
 
     configure<AliucordExtension> {
+        author("canny1913", 1264872702821273633L, hyperlink = true)
         github("https://github.com/canny1913/AliucordPlugins")
     }
 

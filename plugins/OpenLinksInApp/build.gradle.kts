@@ -1,9 +1,12 @@
-version = "1.0.1"
+version = "1.0.2"
 description = "Forces URL handler to open links in current app."
 
 aliucord {
     changelog.set(
         """
+        # 1.0.2
+        * Author fix.
+        
         # 1.0.1
         * Fixes canary/ptb links.
         
