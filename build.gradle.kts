@@ -36,20 +36,10 @@ subprojects {
         }
 
         buildFeatures {
-            resValues = false
+            aidl = false
+            buildConfig = true
+            renderScript = false
             shaders = false
-        }
-
-        sourceSets {
-            named("main") {
-                java {
-                    setSrcDirs(setOf("src"))
-                }
-
-                res {
-                    setSrcDirs(setOf("src/res"))
-                }
-            }
         }
 
         compileOptions {
